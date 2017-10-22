@@ -1,40 +1,46 @@
 package pl.edu.agh.reactivelab
 
-import akka.actor.{Actor, Props, Timers}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Timers}
 import akka.event.LoggingReceive
 import pl.edu.agh.reactivelab.Cart.{ItemAdded, ItemRemoved}
 import Cart._
 
 import scala.concurrent.duration._
 
-class Cart extends Actor with Timers {
+class Cart(defaultTimeout: FiniteDuration) extends Actor with Timers with ActorLogging {
 
-  private def defaultTimer() = timers.startSingleTimer("unique", CartTimerExpired, 5.minutes)
-  private val emptyCart: LoggingReceive = {
+  private def startDefaultTimer() = timers.startSingleTimer("unique", CartTimerExpired, defaultTimeout)
+  private def cancelDefaultTimer() = timers.cancel("unique")
+  private val emptyCart: Receive = LoggingReceive {
     case ItemAdded(item) =>
-      defaultTimer()
+      startDefaultTimer()
       context become nonEmptyCart(Set(item))
 
   }
-  private def nonEmptyCart(items: Set[Any]): LoggingReceive = {
+  private def nonEmptyCart(items: Set[Any]): Receive = LoggingReceive {
     case ItemAdded(item) =>
-      defaultTimer()
+      startDefaultTimer()
       context become nonEmptyCart(items + item)
     case ItemRemoved(item) if items.size > 1 =>
-      defaultTimer()
+      startDefaultTimer()
       context become nonEmptyCart(items - item)
-    case ItemRemoved(item) =>
+    case ItemRemoved(_) =>
       context become emptyCart
     case CartTimerExpired =>
       context become emptyCart
     case CheckoutStarted =>
-      context become inCheckout(items)
+      val checkout = context.actorOf(Checkout.props(defaultTimeout, defaultTimeout))
+      checkout ! Checkout.CheckoutStarted(self, items)
+      sender ! CheckoutStartedResponse(checkout)
+      cancelDefaultTimer()
+      context become inCheckout(checkout, items)
   }
 
-  private def inCheckout(items: Set[Any]): LoggingReceive = {
+  private def inCheckout(checkout: ActorRef, items: Set[Any]): Receive = LoggingReceive {
     case CheckoutClose =>
       context become emptyCart
     case CheckoutCanceled =>
+      startDefaultTimer()
       context become nonEmptyCart(items)
 
   }
@@ -45,16 +51,11 @@ class Cart extends Actor with Timers {
 
 object Cart {
 
-  def props: Props = Props(new Cart)
+
+
+  def props: Props = Props(new Cart(5.minutes))
 
   sealed trait CartEvent
-
-  object <<*>< {
-    def unapply(arg: Any): Option[(Int, Int)] = arg match {
-      case "working" => Some(42 -> 69)
-      case _ => None
-    }
-  }
 
   case object CartTimerExpired extends CartEvent
 
@@ -63,5 +64,8 @@ object Cart {
   case object CheckoutStarted extends CartEvent
   case object CheckoutCanceled extends CartEvent
   case object CheckoutClose extends CartEvent
+
+  sealed trait CartResponse
+  case class CheckoutStartedResponse(checkout: ActorRef)
 
 }
