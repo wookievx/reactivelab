@@ -7,11 +7,14 @@ import Cart._
 
 import scala.concurrent.duration._
 
-class Cart(defaultTimeout: FiniteDuration) extends Actor with Timers with ActorLogging {
+class Cart(
+  defaultTimeout: FiniteDuration,
+  checkoutProps: (FiniteDuration, FiniteDuration) => Props,
+  customer: ActorRef) extends Actor with Timers with ActorLogging {
 
   private def startDefaultTimer() = timers.startSingleTimer("unique", CartTimerExpired, defaultTimeout)
   private def cancelDefaultTimer() = timers.cancel("unique")
-  private val emptyCart: Receive = LoggingReceive {
+  private def emptyCart: Receive = LoggingReceive {
     case ItemAdded(item) =>
       startDefaultTimer()
       context become nonEmptyCart(Set(item))
@@ -28,21 +31,24 @@ class Cart(defaultTimeout: FiniteDuration) extends Actor with Timers with ActorL
       context become emptyCart
     case CartTimerExpired =>
       context become emptyCart
-    case CheckoutStarted =>
-      val checkout = context.actorOf(Checkout.props(defaultTimeout, defaultTimeout))
-      checkout ! Checkout.CheckoutStarted(self, items)
-      sender ! CheckoutStartedResponse(checkout)
+    case StartCheckout =>
+      val checkout = context.actorOf(checkoutProps(defaultTimeout, defaultTimeout))
+      checkout ! Checkout.CheckoutStarted(self, customer, items)
+      customer ! CheckoutStarted(checkout)
+      //only for test
+      sender ! items
       cancelDefaultTimer()
-      context become inCheckout(checkout, items)
+      context become inCheckout(checkout, customer, items)
   }
 
-  private def inCheckout(checkout: ActorRef, items: Set[Any]): Receive = LoggingReceive {
-    case CheckoutClose =>
+  private def inCheckout(checkout: ActorRef, customer: ActorRef, items: Set[Any]): Receive = LoggingReceive {
+    case CheckoutClosed =>
+      customer ! CheckoutClosed
       context become emptyCart
     case CheckoutCanceled =>
+      customer ! CheckoutCanceled
       startDefaultTimer()
       context become nonEmptyCart(items)
-
   }
 
 
@@ -53,7 +59,10 @@ object Cart {
 
 
 
-  def props: Props = Props(new Cart(5.minutes))
+  def props(
+    customer: ActorRef,
+    checkoutProps: (FiniteDuration, FiniteDuration) => Props = Checkout.props
+  ): Props = Props(new Cart(5.minutes, checkoutProps, customer))
 
   sealed trait CartEvent
 
@@ -61,11 +70,14 @@ object Cart {
 
   case class ItemAdded[T](item: T) extends CartEvent
   case class ItemRemoved[T](item: T) extends CartEvent
-  case object CheckoutStarted extends CartEvent
+  case object StartCheckout extends CartEvent
   case object CheckoutCanceled extends CartEvent
-  case object CheckoutClose extends CartEvent
+  case object CheckoutClosed extends CartEvent
 
   sealed trait CartResponse
-  case class CheckoutStartedResponse(checkout: ActorRef)
+  case class CheckoutStarted(checkout: ActorRef) extends CartResponse
+  case object CartEmpty extends CartResponse
+
+
 
 }

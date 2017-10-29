@@ -2,7 +2,7 @@ package pl.edu.agh.reactivelab
 
 import akka.actor._
 import Checkout._
-import Cart.{CheckoutCanceled, CheckoutClose}
+import Cart.{CheckoutCanceled, CheckoutClosed}
 import akka.event.LoggingReceive
 import scala.concurrent.duration.FiniteDuration
 import scala.reflect.ClassTag
@@ -13,21 +13,22 @@ class Checkout(checkoutTimeout: FiniteDuration, paymentTimeout: FiniteDuration) 
   private object PaymentTimer
 
   private val initialBehaviour: Receive = LoggingReceive {
-    case CheckoutStarted(cart, items) =>
+    case CheckoutStarted(cart, customer, items) =>
       timers.startSingleTimer(CheckoutTimer, CheckoutTimerExpired, checkoutTimeout)
-      context become selectingDelivery(cart, items)
+      context become selectingDelivery(cart, customer, items)
   }
 
   private def selectingDelivery(
     cart: ActorRef,
+    customer: ActorRef,
     items: Set[Any]
   ): Receive = cancelBehavior[CheckoutTimerExpired](cart) orElse LoggingReceive {
     case DeliveryMethod(method) =>
-      context become selectingPayment(cart, items, method)
+      context become selectingPayment(cart, customer, items, method)
   }
 
   private def cancelBehavior[T <: TimerEvent : ClassTag](cart: ActorRef): Receive = {
-    case Canceled =>
+    case Cancel =>
       cart ! CheckoutCanceled
       log.info("Order has ben canceled")
       context stop self
@@ -39,12 +40,14 @@ class Checkout(checkoutTimeout: FiniteDuration, paymentTimeout: FiniteDuration) 
 
   private def selectingPayment(
     cart: ActorRef,
+    customer: ActorRef,
     items: Set[Any],
     deliveryMethod: String
   ): Receive = cancelBehavior[CheckoutTimerExpired](cart) orElse LoggingReceive {
     case PaymentMethod(paymentMethod) =>
       timers.cancel(CheckoutTimer)
       timers.startSingleTimer(PaymentTimer, PaymentTimerExpired, paymentTimeout)
+      context.actorOf(PaymentService.props(self, customer))
       context become processingPayment(cart, items, deliveryMethod, paymentMethod)
   }
 
@@ -55,7 +58,7 @@ class Checkout(checkoutTimeout: FiniteDuration, paymentTimeout: FiniteDuration) 
     paymentMethod: String): Receive = cancelBehavior[PaymentTimerExpired](cart) orElse LoggingReceive {
     case PaymentReceived =>
       timers.cancel(PaymentTimer)
-      cart ! CheckoutClose
+      cart ! CheckoutClosed
       log.info(s"Order check-out: {items: $items, delivery: $deliveryMethod, payment: $paymentMethod}")
       context stop self
   }
@@ -74,8 +77,8 @@ object Checkout {
   sealed trait TimerEvent {
     def message: String
   }
-  case class CheckoutStarted(cart: ActorRef, items: Set[Any])
-  case object Canceled extends CheckoutEvent
+  case class CheckoutStarted(cart: ActorRef, customer: ActorRef, items: Set[Any])
+  case object Cancel extends CheckoutEvent
   case class DeliveryMethod(name: String) extends CheckoutEvent
   case class PaymentMethod(name: String) extends CheckoutEvent
   case object PaymentReceived extends CheckoutEvent
@@ -85,6 +88,9 @@ object Checkout {
   case object PaymentTimerExpired extends TimerEvent {
     override def message: String = "payment timeout"
   }
+
+  sealed trait CheckoutResponse
+  case class PaymentServiceStarted(service: ActorRef) extends CheckoutResponse
 
   type CheckoutTimerExpired = CheckoutTimerExpired.type
   type PaymentTimerExpired = PaymentTimerExpired.type

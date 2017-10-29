@@ -1,7 +1,7 @@
 package pl.edu.agh.reactivelab
 
 import akka.actor.{ActorRef, FSM, Props}
-import pl.edu.agh.reactivelab.Cart.{CheckoutCanceled, CheckoutClose}
+import pl.edu.agh.reactivelab.Cart.{CheckoutCanceled, CheckoutClosed}
 import pl.edu.agh.reactivelab.Checkout._
 import pl.edu.agh.reactivelab.CheckoutFSM.{Canceled, _}
 
@@ -12,7 +12,7 @@ class CheckoutFSM(checkoutTimeout: FiniteDuration, paymentTimeout: FiniteDuratio
   startWith(Initial, Ignored)
 
   when(Initial) {
-    case Event(CheckoutStarted(cart, items), _) =>
+    case Event(CheckoutStarted(cart, _, items), _) =>
       log.info(s"Started checkout: $items")
       goto(SelectingDelivery) using SelectingDeliveryData(items, cart)
   }
@@ -32,7 +32,7 @@ class CheckoutFSM(checkoutTimeout: FiniteDuration, paymentTimeout: FiniteDuratio
   when(ProcessingPayment) {
     case Event(PaymentReceived, ProcessingPaymentData(delivery, payment, elems, cart)) =>
       log.info(s"Received payment, for order: [$elems, $delivery, $payment]")
-      cart ! CheckoutClose
+      cart ! CheckoutClosed
       goto(Closed) using Ignored
   }
 
@@ -40,7 +40,7 @@ class CheckoutFSM(checkoutTimeout: FiniteDuration, paymentTimeout: FiniteDuratio
   when(Canceled)(FSM.NullFunction)
 
   whenUnhandled {
-    case Event(Checkout.Canceled, InitializedState(cart)) =>
+    case Event(Checkout.Cancel, InitializedState(cart)) =>
       log.info("Order has been canceled")
       cart ! CheckoutCanceled
       goto(CheckoutFSM.Canceled) using Ignored

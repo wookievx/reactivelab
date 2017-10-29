@@ -29,15 +29,15 @@ class CartFSM(defaultTimeout: FiniteDuration) extends FSM[CartState, Data] with 
     case Event(CartTimerExpired, _) =>
       log.info("Cart timer expired")
       goto(Empty) using EmptyData
-    case Event(CheckoutStarted, NonEmptyData(elems)) =>
+    case Event(StartCheckout, NonEmptyData(elems)) =>
       log.info("Checkout started")
       val checkout = context.actorOf(CheckoutFSM.props(defaultTimeout, defaultTimeout))
-      checkout ! Checkout.CheckoutStarted(self, elems)
-      goto(InCheckout) using InCheckoutData(elems, checkout) replying CheckoutStartedResponse(checkout)
+      checkout ! Checkout.CheckoutStarted(self, ???, elems)
+      goto(InCheckout) using InCheckoutData(elems, checkout) replying CheckoutStarted(checkout)
   }
 
   when(InCheckout) {
-    case Event(CheckoutClose, _) =>
+    case Event(CheckoutClosed, _) =>
       goto(Empty) using EmptyData
     case Event(CheckoutCanceled, InCheckoutData(items, _)) =>
       goto(NonEmpty) using NonEmptyData(items)
