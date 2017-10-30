@@ -28,8 +28,10 @@ class Cart(
       startDefaultTimer()
       context become nonEmptyCart(items - item)
     case ItemRemoved(_) =>
+      customer ! CartEmpty
       context become emptyCart
     case CartTimerExpired =>
+      customer ! CartEmpty
       context become emptyCart
     case StartCheckout =>
       val checkout = context.actorOf(checkoutProps(defaultTimeout, defaultTimeout))

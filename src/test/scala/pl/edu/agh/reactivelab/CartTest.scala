@@ -26,6 +26,30 @@ class CartTest extends TestKit(ActorSystem(
 
   }
 
+  "Cart" should "remove items correctly" in {
+    import Cart._
+    val probe = TestProbe()
+    val customerProbe = TestProbe()
+    val cart = system.actorOf(Cart.props(customerProbe.testActor))
+
+    cart ! ItemAdded("i1")
+    cart ! ItemAdded("i2")
+    cart ! ItemRemoved("i2")
+    (cart ! StartCheckout)(probe.testActor)
+    probe expectMsg Set("i1")
+  }
+
+  "Cart" should "signal cart becoming empty" in {
+    import Cart._
+    import scala.concurrent.duration._
+    val customerProbe = TestProbe()
+    val cart = system.actorOf(Cart.props(customerProbe.testActor))
+
+    cart ! ItemAdded("i1")
+    cart ! ItemAdded("i2")
+    customerProbe.expectMsg(5.minutes, CartEmpty)
+  }
+
   "Checkout" should "react correctly" in {
     import Checkout._
     import scala.concurrent.duration._
