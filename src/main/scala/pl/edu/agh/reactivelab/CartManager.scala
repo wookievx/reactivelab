@@ -17,7 +17,7 @@ class CartManager(
   customer: ActorRef,
 ) extends PersistentActor with Timers with ActorLogging {
 
-  private var recoverState: RecoverState = _
+  private var recoverState: RecoverState = RecoverState(Empty, Cart.empty, None)
 
   private def startDefaultTimer(): Unit =  {
     timers.startSingleTimer("unique", CartTimerExpired, defaultTimeout)

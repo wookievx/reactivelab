@@ -15,7 +15,7 @@ class CartManagerTest extends TestKit(ActorSystem(
 
   private val probeCheckout = TestProbe()
 
-  "Cart" should "store items correctly" in {
+  "Cart manager" should "store items correctly" in {
     import CartManager._
     val probe = TestProbe()
     val customerProbe = TestProbe()
@@ -27,6 +27,54 @@ class CartManagerTest extends TestKit(ActorSystem(
     cart ! ItemAdded(item2)
     (cart ! StartCheckout)(probe.testActor)
     probe expectMsg (Cart.empty addItem item addItem item2)
+
+  }
+
+  "Cart manager" should "remove items correctly" in {
+    import CartManager._
+    val probe = TestProbe()
+    val customerProbe = TestProbe()
+    val cart = system.actorOf(CartManager.props(customerProbe.testActor)())
+
+    val item = Item(URI.create("item1"), "t1", 3.4, 100)
+    val itemDrained = item.copy(count = 90)
+    cart ! ItemAdded(item)
+    cart ! ItemRemoved(item.copy(count = 10))
+    (cart ! StartCheckout)(probe.testActor)
+    probe expectMsg (Cart.empty addItem itemDrained)
+  }
+
+  "Cart" should "implement buisness logic" in {
+    val cart = Cart.empty
+
+    val uri1 = URI.create("item1")
+    val uri2 = URI.create("item2")
+    val item1 = Item(uri1, "t1", 3.4, 100)
+    val item2 = Item(uri2, "t2", 4.5, 100)
+
+    val updated1 = cart addItem item1 addItem item2
+    updated1.items should equal(
+      Map(
+        uri1 -> item1,
+        uri2 -> item2
+      )
+    )
+
+    val updated2 = updated1 addItem item1
+    updated2.items should equal(
+      Map(
+        uri1 -> item1.copy(count = 200),
+        uri2 -> item2
+      )
+    )
+
+    val update3 = updated2.removeItem(uri2, 30)
+    update3.items should equal(
+      Map(
+        uri1 -> item1.copy(count = 200),
+        uri2 -> item2.copy(count = 70)
+      )
+    )
 
   }
 
@@ -48,6 +96,7 @@ class CartManagerTest extends TestKit(ActorSystem(
     checkout ! PaymentReceived
     probeCart.expectMsg(CheckoutClosed)
   }
+
 
 
 }
