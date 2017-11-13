@@ -1,85 +1,35 @@
 package pl.edu.agh.reactivelab
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Timers}
-import akka.event.LoggingReceive
-import pl.edu.agh.reactivelab.Cart.{ItemAdded, ItemRemoved}
-import Cart._
+import java.net.URI
 
-import scala.concurrent.duration._
+import pl.edu.agh.reactivelab.Cart.Item
 
-class Cart(
-  defaultTimeout: FiniteDuration,
-  checkoutProps: (FiniteDuration, FiniteDuration) => Props,
-  customer: ActorRef) extends Actor with Timers with ActorLogging {
+import scala.language.implicitConversions
 
-  private def startDefaultTimer() = timers.startSingleTimer("unique", CartTimerExpired, defaultTimeout)
-  private def cancelDefaultTimer() = timers.cancel("unique")
-  private def emptyCart: Receive = LoggingReceive {
-    case ItemAdded(item) =>
-      startDefaultTimer()
-      context become nonEmptyCart(Set(item))
-
-  }
-  private def nonEmptyCart(items: Set[Any]): Receive = LoggingReceive {
-    case ItemAdded(item) =>
-      startDefaultTimer()
-      context become nonEmptyCart(items + item)
-    case ItemRemoved(item) if items.size > 1 =>
-      startDefaultTimer()
-      context become nonEmptyCart(items - item)
-    case ItemRemoved(_) =>
-      customer ! CartEmpty
-      context become emptyCart
-    case CartTimerExpired =>
-      customer ! CartEmpty
-      context become emptyCart
-    case StartCheckout =>
-      val checkout = context.actorOf(checkoutProps(defaultTimeout, defaultTimeout))
-      checkout ! Checkout.CheckoutStarted(self, customer, items)
-      customer ! CheckoutStarted(checkout)
-      //only for test
-      sender ! items
-      cancelDefaultTimer()
-      context become inCheckout(checkout, customer, items)
+case class Cart(items: Map[URI, Item]) {
+  def addItem(it: Item): Cart = {
+    val currentCount = if (items contains it.id) items(it.id).count else 0
+    copy(items = items.updated(it.id, it.withCount(_ + currentCount)))
   }
 
-  private def inCheckout(checkout: ActorRef, customer: ActorRef, items: Set[Any]): Receive = LoggingReceive {
-    case CheckoutClosed =>
-      customer ! CheckoutClosed
-      context become emptyCart
-    case CheckoutCanceled =>
-      customer ! CheckoutCanceled
-      startDefaultTimer()
-      context become nonEmptyCart(items)
+  def removeItem(id: URI, count: Int): Cart = {
+    val maybeItem = items.get(id)
+    val nextItems = maybeItem.filter(_.count >= count).map { item =>
+      items.updated(id, item.withCount(_ - count))
+    } getOrElse {
+      items - id
+    }
+    copy(items = nextItems)
   }
-
-
-  override def receive: Receive = emptyCart
 }
 
 object Cart {
 
+  def empty = Cart(Map.empty)
 
+  implicit def cartAsMap(cart: Cart): Map[URI, Item] = cart.items
 
-  def props(
-    customer: ActorRef,
-    checkoutProps: (FiniteDuration, FiniteDuration) => Props = Checkout.props
-  ): Props = Props(new Cart(5.minutes, checkoutProps, customer))
-
-  sealed trait CartEvent
-
-  case object CartTimerExpired extends CartEvent
-
-  case class ItemAdded[T](item: T) extends CartEvent
-  case class ItemRemoved[T](item: T) extends CartEvent
-  case object StartCheckout extends CartEvent
-  case object CheckoutCanceled extends CartEvent
-  case object CheckoutClosed extends CartEvent
-
-  sealed trait CartResponse
-  case class CheckoutStarted(checkout: ActorRef) extends CartResponse
-  case object CartEmpty extends CartResponse
-
-
-
+  case class Item(id: URI, name: String, price: BigDecimal, count: Int) {
+    def withCount(modifier: Int => Int): Item = copy(count = modifier(count))
+  }
 }
