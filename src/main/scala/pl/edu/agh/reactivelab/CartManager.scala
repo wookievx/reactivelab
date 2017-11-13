@@ -14,7 +14,7 @@ import scala.concurrent.duration._
 class CartManager(
   defaultTimeout: FiniteDuration,
   checkoutProps: (Cart, ActorRef) => Props,
-  customer: ActorRef,
+  customer: ActorRef
 ) extends PersistentActor with Timers with ActorLogging {
 
   private var recoverState: RecoverState = RecoverState(Empty, Cart.empty, None)
@@ -40,7 +40,7 @@ class CartManager(
       startDefaultTimer()
       context become nonEmptyCart(recoverState.cart)
     case MarkedEvent(ItemRemoved(item), now) =>
-      recoverState = recoverState.copy(cart = recoverState.cart addItem item, timerStart = Some(now))
+      recoverState = recoverState.copy(cart = recoverState.cart addItem item)
       startDefaultTimer(recoverState.timerStart.map(now - _).getOrElse(0))
       context become nonEmptyCart(recoverState.cart)
     case MarkedEvent(CartTimerExpired, _) =>
@@ -54,15 +54,18 @@ class CartManager(
     checkout ! Checkout.CheckoutStarted(self, customer, recoverState.cart)
     customer ! CheckoutStarted(checkout)
     cancelDefaultTimer()
-    context become inCheckout(checkout, recoverState.cart)
+    context become inCheckout(checkout, items)
   }
 
-  private def emptyCart: Receive = LoggingReceive {
-    case event@ItemAdded(item) =>
-      persist(event.marked) { _ =>
-        startDefaultTimer()
-        context become nonEmptyCart(Cart.empty addItem item)
-      }
+  private def emptyCart: Receive = {
+    log.debug("Entered state empty")
+    LoggingReceive {
+      case event@ItemAdded(item) =>
+        persist(event.marked) { _ =>
+          startDefaultTimer()
+          context become nonEmptyCart(Cart.empty addItem item)
+        }
+    }
   }
 
   private def snapshotCart(cart: Cart, event: TimerEvent)(code: => Unit): Unit = persist(event) { _ =>
@@ -70,56 +73,63 @@ class CartManager(
     saveSnapshot(CartSnapshot(event, NonEmpty, cart))
   }
 
-  private def nonEmptyCart(items: Cart): Receive = LoggingReceive {
-    case ItemAdded(item) if items.size > 5 =>
-      snapshotCart(items, TimerStarted()) {
-        startDefaultTimer()
-        context become nonEmptyCart(items addItem item)
-      }
-    case event@ItemAdded(item) =>
-      persist(event.marked) { _ =>
-        persist(TimerStarted()) { _ =>
+  private def nonEmptyCart(items: Cart): Receive = {
+    log.debug(s"Entered state NonEmpty: $items")
+    LoggingReceive {
+      case ItemAdded(item) if items.size > 5 =>
+        snapshotCart(items, TimerStarted()) {
           startDefaultTimer()
           context become nonEmptyCart(items addItem item)
         }
-      }
-    case event@ItemRemoved(item) if items.size > 1 =>
-      persist(event.marked) { _ =>
-        persist(TimerStarted()) { _ =>
-          startDefaultTimer()
-          context become nonEmptyCart(items.removeItem(item.id, 1))
+      case event@ItemAdded(item) =>
+        persist(event.marked) { _ =>
+          persist(TimerStarted()) { _ =>
+            startDefaultTimer()
+            context become nonEmptyCart(items addItem item)
+          }
         }
-      }
-    case event@ItemRemoved(_) =>
-      persist(event.marked) { _ =>
-        context become emptyCart
-      }
-    case CartTimerExpired =>
-      persist(CartTimerExpired) { _ =>
-        context become emptyCart
-      }
-    case StartCheckout =>
-      persist(StartCheckout.marked) { _ =>
-        sender ! items
-        initializeCheckout(items)
-        saveSnapshot(CartSnapshot(TimerCanceled, InCheckout, items))
-      }
+      case event@ItemRemoved(item) =>
+        persist(event.marked) { _ =>
+          persist(TimerStarted()) { _ =>
+            startDefaultTimer()
+            val cart = items.removeItem(item.id, 1)
+            if (cart.nonEmpty) {
+              context become nonEmptyCart(items.removeItem(item.id, item.count))
+            } else {
+              context become emptyCart
+            }
+          }
+        }
+      case CartTimerExpired =>
+        persist(CartTimerExpired) { _ =>
+          context become emptyCart
+        }
+      case StartCheckout =>
+        persist(StartCheckout.marked) { _ =>
+          sender ! items
+          initializeCheckout(items)
+          saveSnapshot(CartSnapshot(TimerCanceled, InCheckout, items))
+        }
+    }
   }
 
-  private def inCheckout(checkout: ActorRef, items: Cart): Receive = LoggingReceive {
-    case CheckoutClosed =>
-      persist(CheckoutClosed.marked) { _ =>
-        customer ! CheckoutClosed
-        context become emptyCart
-        saveSnapshot(CartSnapshot(NoTimerEvent, Empty, Cart.empty))
-      }
-    case CheckoutCanceled =>
-      persist(CheckoutCanceled.marked) { _ =>
-        customer ! CheckoutCanceled
-        startDefaultTimer()
-        context become nonEmptyCart(items)
-        saveSnapshot(CartSnapshot(TimerStarted(), NonEmpty, Cart.empty))
-      }
+  private def inCheckout(checkout: ActorRef, items: Cart): Receive = {
+    log.debug(s"Entered state InCheckout: $items")
+    LoggingReceive {
+      case CheckoutClosed =>
+        persist(CheckoutClosed.marked) { _ =>
+          customer ! CheckoutClosed
+          context become emptyCart
+          saveSnapshot(CartSnapshot(NoTimerEvent, Empty, Cart.empty))
+        }
+      case CheckoutCanceled =>
+        persist(CheckoutCanceled.marked) { _ =>
+          customer ! CheckoutCanceled
+          startDefaultTimer()
+          context become nonEmptyCart(items)
+          saveSnapshot(CartSnapshot(TimerStarted(), NonEmpty, Cart.empty))
+        }
+    }
   }
 
   override def receiveRecover: Receive = {
