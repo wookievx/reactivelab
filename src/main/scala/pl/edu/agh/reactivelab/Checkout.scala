@@ -36,7 +36,8 @@ class Checkout(
   }
 
   private val recoverMessages: PartialFunction[CheckoutMarked, Unit] = {
-    case e if e.now < lastTimerValue =>
+    case e if e.now > lastTimerValue =>
+      log.debug(s"Bug: $e")
       handleCancel()
     case CheckoutMarked(Cancel, _) =>
       handleCancel()
@@ -79,6 +80,8 @@ class Checkout(
         log.info(s"Timer expired: ${obj.message}")
         handleCancel()
       }
+    case "kill" =>
+      throw new InterruptedException("Should stop")
   }
 
   private def handleCancel[T <: TimerEvent : ClassTag](): Unit = {

@@ -76,7 +76,7 @@ class CartManager(
   private def nonEmptyCart(items: Cart): Receive = {
     log.debug(s"Entered state NonEmpty: $items")
     LoggingReceive {
-      case ItemAdded(item) if items.size > 5 =>
+      case ItemAdded(item) if items.size > 5 && items.size % 5 == 0 =>
         snapshotCart(items, TimerStarted()) {
           startDefaultTimer()
           context become nonEmptyCart(items addItem item)

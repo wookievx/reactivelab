@@ -97,6 +97,36 @@ class CartManagerTest extends TestKit(ActorSystem(
     probeCart.expectMsg(CheckoutClosed)
   }
 
+  "Checkout" should "restore it's internat state" in {
+    import Checkout._
+
+    val probeCart = TestProbe()
+    val probeCustomer = TestProbe()
+
+    val checkout1 = system.actorOf(
+      Checkout.props(
+        customer = probeCustomer.testActor)(
+        Cart.empty addItem Item(URI.create("simple-item"), "item1", 3.4, 10),
+        probeCart.testActor
+      )
+    )
+    checkout1 ! DeliveryMethod("post-office")
+    checkout1 ! "kill"
+    Thread.sleep(1000L)
+    val checkout2 = system.actorOf(
+      Checkout.props(
+        customer = probeCustomer.testActor)(
+        Cart.empty addItem Item(URI.create("simple-item"), "item1", 3.4, 10),
+        probeCart.testActor
+      )
+    )
+
+    checkout2 ! PaymentMethod("pay-pal")
+    checkout2 ! PaymentReceived
+    probeCart.expectMsg(CheckoutClosed)
+
+  }
+
 
 
 }
