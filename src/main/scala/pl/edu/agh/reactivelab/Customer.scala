@@ -1,7 +1,9 @@
 package pl.edu.agh.reactivelab
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Timers}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Timers}
 import akka.event.LoggingReceive
+import pl.edu.agh.reactivelab.Cart.Item
+import pl.edu.agh.reactivelab.products.ProductCatalog.ProductQuery
 
 import scala.concurrent.duration._
 
@@ -14,6 +16,7 @@ class Customer(storage: ActorRef) extends Actor with Timers with ActorLogging {
 
   override def preStart(): Unit = {
     cart = context.actorOf(CartManager.props(self)(Checkout.props(5.minutes, 5.minutes, self)))
+    storage ! ProductQuery(List("Fanta", "Pepsi"), "Fanta")
   }
 
   override def postStop(): Unit = {
@@ -24,6 +27,8 @@ class Customer(storage: ActorRef) extends Actor with Timers with ActorLogging {
     case CheckoutStarted(checkout) =>
       context become inCheckout(cart, checkout)
     case CartEmpty =>
+    case i: Item =>
+      cart ! ItemAdded(i)
   }
 
   private def inCheckout(cart: ActorRef, checkout: ActorRef): Receive = LoggingReceive {
@@ -44,4 +49,5 @@ class Customer(storage: ActorRef) extends Actor with Timers with ActorLogging {
 }
 
 object Customer {
+  def props(storage: ActorRef) = Props(new Customer(storage))
 }

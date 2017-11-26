@@ -43,7 +43,6 @@ class DefaultProductStorage extends ProductStorage {
         case Array(id, p1, p2, brand) =>
           Iterator.single(brand -> Item(id, s"$p1,$p2", brand)(rnd))
         case d =>
-          println(line + "," + d.length)
           Iterator.empty
       }
     }.groupToTreeMap

@@ -1,25 +1,29 @@
 package pl.edu.agh.reactivelab.server
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.stream.ActorMaterializer
+import com.typesafe.config.ConfigFactory
+import pl.edu.agh.reactivelab.Customer
 
-import scala.collection.concurrent.TrieMap
 import scala.concurrent.ExecutionContextExecutor
 import scala.io.StdIn
 
 object WebServer {
   def main(args: Array[String]) {
 
-    implicit val system: ActorSystem = ActorSystem("my-system")
 
-    implicit val materializer: ActorMaterializer = ActorMaterializer()
-    // needed for the future flatMap/onComplete in the end
+
+    import scala.concurrent.duration._
+    implicit val system: ActorSystem = ActorSystem("server", ConfigFactory.load()
+      .atPath("storage"))
     implicit val executionContext: ExecutionContextExecutor = system.dispatcher
-
-    val customers = TrieMap.empty[String, ActorRef]
+    implicit val materializer: ActorMaterializer = ActorMaterializer()
+    system.actorSelection("akka.tcp://storage@127.0.0.1:2553/user/catalog").resolveOne(10.seconds) foreach { storage =>
+      system.actorOf(Customer props storage, "customer")
+    }
 
     def handlePayment(
       initMsg: Int => String,
@@ -49,6 +53,8 @@ object WebServer {
     StdIn.readLine() // let it run until user presses return
     bindingFuture
       .flatMap(_.unbind()) // trigger unbinding from the port
-      .onComplete(_ => system.terminate()) // and shutdown when done
+      .onComplete { _ =>
+      system.terminate()
+    } // and shutdown when done
   }
 }
