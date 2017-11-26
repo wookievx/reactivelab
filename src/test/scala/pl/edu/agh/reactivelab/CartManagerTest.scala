@@ -21,8 +21,8 @@ class CartManagerTest extends TestKit(ActorSystem(
     val customerProbe = TestProbe()
     val cart = system.actorOf(CartManager.props(customerProbe.testActor)())
 
-    val item = Item(URI.create("item1"), "t1", 3.4, 100)
-    val item2 = Item(URI.create("item2"), "t2", 44, 10)
+    val item = Item("item1", "t1", 3.4, 100)
+    val item2 = Item("item2", "t2", 44, 10)
     cart ! ItemAdded(item)
     cart ! ItemAdded(item2)
     (cart ! StartCheckout)(probe.testActor)
@@ -36,7 +36,7 @@ class CartManagerTest extends TestKit(ActorSystem(
     val customerProbe = TestProbe()
     val cart = system.actorOf(CartManager.props(customerProbe.testActor)())
 
-    val item = Item(URI.create("item1"), "t1", 3.4, 100)
+    val item = Item("item1", "t1", 3.4, 100)
     val itemDrained = item.copy(count = 90)
     cart ! ItemAdded(item)
     cart ! ItemRemoved(item.copy(count = 10))
@@ -47,8 +47,8 @@ class CartManagerTest extends TestKit(ActorSystem(
   "Cart" should "implement buisness logic" in {
     val cart = Cart.empty
 
-    val uri1 = URI.create("item1")
-    val uri2 = URI.create("item2")
+    val uri1 = "item1"
+    val uri2 = "item2"
     val item1 = Item(uri1, "t1", 3.4, 100)
     val item2 = Item(uri2, "t2", 4.5, 100)
 
@@ -87,7 +87,7 @@ class CartManagerTest extends TestKit(ActorSystem(
     val checkout = system.actorOf(
       Checkout.props(
         customer = probeCustomer.testActor)(
-        Cart.empty addItem Item(URI.create("simple-item"), "item1", 3.4, 10),
+        Cart.empty addItem Item("simple-item", "item1", 3.4, 10),
         probeCart.testActor
       )
     )
@@ -106,7 +106,7 @@ class CartManagerTest extends TestKit(ActorSystem(
     val checkout1 = system.actorOf(
       Checkout.props(
         customer = probeCustomer.testActor)(
-        Cart.empty addItem Item(URI.create("simple-item"), "item1", 3.4, 10),
+        Cart.empty addItem Item("simple-item", "item1", 3.4, 10),
         probeCart.testActor
       )
     )
@@ -116,7 +116,7 @@ class CartManagerTest extends TestKit(ActorSystem(
     val checkout2 = system.actorOf(
       Checkout.props(
         customer = probeCustomer.testActor)(
-        Cart.empty addItem Item(URI.create("simple-item"), "item1", 3.4, 10),
+        Cart.empty addItem Item("simple-item", "item1", 3.4, 10),
         probeCart.testActor
       )
     )

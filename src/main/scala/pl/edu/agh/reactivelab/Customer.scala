@@ -2,15 +2,15 @@ package pl.edu.agh.reactivelab
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Timers}
 import akka.event.LoggingReceive
+
 import scala.concurrent.duration._
 
-class Customer extends Actor with Timers with ActorLogging {
+class Customer(storage: ActorRef) extends Actor with Timers with ActorLogging {
   import CartManager._
   import Checkout.PaymentServiceStarted
   import PaymentService._
 
   private var cart: ActorRef = _
-
 
   override def preStart(): Unit = {
     cart = context.actorOf(CartManager.props(self)(Checkout.props(5.minutes, 5.minutes, self)))

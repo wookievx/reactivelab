@@ -5,10 +5,12 @@ import java.util.concurrent.TimeUnit
 import akka.actor._
 import Checkout._
 import CartManager.{CheckoutCanceled, CheckoutClosed}
+import akka.actor.SupervisorStrategy._
 import akka.event.LoggingReceive
 import akka.persistence.PersistentActor
+import pl.edu.agh.reactivelab.payment.MockHttpProtocol
 
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.duration._
 import scala.reflect.ClassTag
 
 class Checkout(
@@ -97,7 +99,7 @@ class Checkout(
       persist(p.marked) { _ =>
         timers.cancel(CheckoutTimer)
         timers.startSingleTimer(PaymentTimer, PaymentTimerExpired, paymentTimeout)
-        context.actorOf(PaymentService.props(self, customer))
+        context.actorOf(payment.PaymentService.props[MockHttpProtocol](context.self, customer, items))
         context become processingPayment(deliveryMethod, paymentMethod)
       }
   }
@@ -130,6 +132,12 @@ class Checkout(
   override def receiveCommand: Receive = selectingDelivery
 
   override def persistenceId = s"${cart.toString()}-checkout"
+
+  import payment.PaymentService.Exceptions._
+  override def supervisorStrategy: SupervisorStrategy = OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1.minute) {
+    case TimeoutError | (_: ProtocolError) => Stop
+    case _: CommunicationError => Restart
+  }
 }
 
 object Checkout {
