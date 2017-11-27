@@ -14,10 +14,8 @@ import scala.io.StdIn
 object WebServer {
   def main(args: Array[String]) {
 
-
-
     import scala.concurrent.duration._
-    implicit val system: ActorSystem = ActorSystem("server", ConfigFactory.load()
+    implicit val system: ActorSystem = ActorSystem("server", ConfigFactory.load("server.conf")
       .atPath("storage"))
     implicit val executionContext: ExecutionContextExecutor = system.dispatcher
     implicit val materializer: ActorMaterializer = ActorMaterializer()

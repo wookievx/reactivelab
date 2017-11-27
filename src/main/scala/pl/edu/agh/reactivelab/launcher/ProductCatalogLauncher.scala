@@ -9,14 +9,12 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 class ProductCatalogLauncher {
-  private val config = ConfigFactory.load()
-    .atKey("storage")
-
+  private val config = ConfigFactory.load("storage.conf")
 
   def launch: Future[Terminated] = {
     println(config.atPath("akka").getString("loglevel"))
     implicit val actorSystem: ActorSystem = ActorSystem("storage", config)
-    implicit val materialzier: ActorMaterializer = ActorMaterializer()
+    implicit val materializer: ActorMaterializer = ActorMaterializer()
     //heavy operation
     actorSystem.actorOf(ProductCatalog.props(new DefaultProductStorage), "catalog")
     actorSystem.whenTerminated
